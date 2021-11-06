@@ -1,5 +1,6 @@
 #pragma once
 
+#include <assert.h>
 #include <math.h>
 
 #include <vector>
@@ -10,6 +11,8 @@ private:
   const size_t N;
   const size_t M;
   const size_t Beta;
+  const size_t NumRowBlock;
+  const size_t NumColBlock;
   std::vector<double> Val;
   std::vector<size_t> Row_Idx;
   std::vector<size_t> Col_Idx;
@@ -35,8 +38,8 @@ private:
     if (Dim == 1) {
       if (notZero(Original_Matrix[Row_Begin][Col_Begin])) {
         Val.emplace_back(Original_Matrix[Row_Begin][Col_Begin]);
-        Row_Idx.emplace_back(Row_Begin);
-        Col_Idx.emplace_back(Col_Begin);
+        Row_Idx.emplace_back(Row_Begin % Beta);
+        Col_Idx.emplace_back(Col_Begin % Beta);
       }
       return;
     }
@@ -55,12 +58,110 @@ private:
                Half_Dim);
   }
 
+  size_t blockIdx(int i, int j) { return i * NumColBlock + j; }
+
+  void blockRowV(const size_t i, std::vector<size_t>::iterator R_Begin,
+                 std::vector<size_t>::iterator R_End,
+                 std::vector<double>::iterator X_Begin,
+                 std::vector<double>::iterator X_End,
+                 std::vector<double>::iterator Y_Begin,
+                 std::vector<double>::iterator Y_End) {
+    size_t R_Len = R_End - R_Begin;
+    assert(R_Len >= 2);
+    if (R_Len == 2) {
+      size_t l = *(R_Begin) + 1;
+      size_t r = *(R_Begin + 1);
+      assert(l <= r); // Bug!!
+      if (l == r) {
+        size_t Start = Blk_Ptr[blockIdx(i, r)];
+        size_t End = Blk_Ptr[blockIdx(i, r) + 1] - 1;
+        blockV(Start, End, Beta, X_Begin, X_End, Y_Begin, Y_End);
+      } else {
+        size_t Start = Blk_Ptr[blockIdx(i, l) - 1];
+        size_t End = Blk_Ptr[blockIdx(i, r) + 1] - 1;
+        printf("X.length = %d\n", X_End - X_Begin);
+        for (size_t k = Start; k <= End; ++k) {
+          *(Y_Begin + Row_Idx[k]) += Val[k] * *(X_Begin + Col_Idx[k]);
+          printf("Y[%zu] += %.2f * %.2f\n", Row_Idx[k], Val[k],
+                 *(X_Begin + Col_Idx[k]));
+        }
+      }
+      return;
+    }
+    size_t Mid = (R_Len & 1) ? (R_Len >> 1) : ((R_Len >> 1) - 1);
+    size_t XMid = Beta * (*(R_Begin + Mid) - *R_Begin);
+    printf("XMid = %zu\n", XMid);
+    std::vector<double> Z(Beta, 0);
+    blockRowV(i, R_Begin, R_Begin + Mid + 1, X_Begin, X_Begin + XMid, Y_Begin,
+              Y_End);
+    blockRowV(i, R_Begin + Mid, R_End, X_Begin + XMid, X_End, Z.begin(),
+              Z.end());
+
+    for (size_t k = 0; k < Beta; ++k) {
+      *(Y_Begin + k) += Z[k];
+    }
+  }
+
+  void blockV(const size_t Start, const size_t End, const size_t Dim,
+              std::vector<double>::iterator X_Begin,
+              std::vector<double>::iterator X_End,
+              std::vector<double>::iterator Y_Begin,
+              std::vector<double>::iterator Y_End) {
+    if (End - Start <= Dim) {
+      for (size_t k = Start; k <= End; ++k) {
+        *(Y_Begin + Row_Idx[k]) += Val[k] * *(X_Begin + Col_Idx[k]);
+        printf("Y[%zu] += %.2f * %.2f\n", Row_Idx[k], Val[k],
+               *(X_Begin + Col_Idx[k]));
+      }
+      return;
+    }
+    size_t Half_Dim = Dim >> 1;
+    size_t s1, s2, s3;
+    // Binary search s2
+    size_t Low = Start, High = End;
+    while (Low <= High) {
+      size_t Mid = (Low + High) >> 1;
+      if (Row_Idx[Mid] & Half_Dim) {
+        High = Mid - 1;
+        s2 = Mid;
+      } else {
+        Low = Mid + 1;
+      }
+    }
+    // Binary search s1
+    Low = Start, High = s2 - 1;
+    while (Low <= High) {
+      size_t Mid = (Low + High) >> 1;
+      if (Col_Idx[Mid] & Half_Dim) {
+        High = Mid - 1;
+        s1 = Mid;
+      } else {
+        Low = Mid + 1;
+      }
+    }
+    // Binary search s3
+    Low = s2, High = End;
+    while (Low <= High) {
+      size_t Mid = (Low + High) >> 1;
+      if (Col_Idx[Mid] & Half_Dim) {
+        High = Mid - 1;
+        s3 = Mid;
+      } else {
+        Low = Mid + 1;
+      }
+    }
+
+    blockV(Start, s1 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
+    blockV(s3, End, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
+    blockV(s1, s2 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
+    blockV(s2, s3 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
+  }
+
 public:
   CSB(const std::vector<std::vector<double>> &Original_Matrix)
       : Original_Matrix(Original_Matrix), N(Original_Matrix.size()),
-        M(Original_Matrix[0].size()), Beta(genBeta(Original_Matrix.size())) {
-    size_t NumRowBlock = N / Beta;
-    size_t NumColBlock = M / Beta;
+        M(Original_Matrix[0].size()), Beta(genBeta(N)), NumRowBlock(N / Beta),
+        NumColBlock(M / Beta) {
     Blk_Ptr.emplace_back(0);
     for (size_t i = 0; i < NumRowBlock; ++i) {
       size_t Row_Begin = i * Beta;
@@ -71,6 +172,26 @@ public:
         genZMorton(Row_Begin, Row_End, Col_Begin, Col_End, Beta);
         Blk_Ptr.emplace_back(Val.size());
       }
+    }
+  }
+
+  void SpMV(std::vector<double> &X, std::vector<double> &Y) {
+    fill(Y.begin(), Y.end(), 0);
+    for (size_t i = 0; i < NumRowBlock; ++i) {
+      std::vector<size_t> R;
+      R.emplace_back(0);
+      size_t count = 0;
+      for (size_t j = 0; j < NumColBlock - 1; ++j) {
+        size_t Block_Idx = blockIdx(i, j);
+        count += Blk_Ptr[Block_Idx + 1] - Blk_Ptr[Block_Idx];
+        if (count + Blk_Ptr[Block_Idx + 2] - Blk_Ptr[Block_Idx + 1] > Beta) {
+          R.emplace_back(j);
+          count = 0;
+        }
+      }
+      R.emplace_back(NumColBlock - 1);
+      blockRowV(i, R.begin(), R.end(), X.begin(), X.end(), Y.begin() + i * Beta,
+                Y.begin() + (i + 1) * Beta);
     }
   }
 };

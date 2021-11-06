@@ -14,5 +14,13 @@ int main() {
   }
 
   CSB CSB1(Matrix);
+  std::vector<double> X(M), Y(N);
+  for (size_t i = 0; i < M; ++i) {
+    std::cin >> X[i];
+  }
+  CSB1.SpMV(X, Y);
+  for (size_t i = 0; i < N; ++i) {
+    std::cout << Y[i] << " \n"[i == N - 1];
+  }
   return 0;
 }
