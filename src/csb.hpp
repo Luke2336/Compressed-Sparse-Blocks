@@ -85,11 +85,19 @@ private:
     size_t Mid = (R_Len & (size_t)1) ? (R_Len >> 1) : ((R_Len >> 1) - 1);
     size_t XMid = Beta * (*(R_Begin + Mid) - *R_Begin);
     std::vector<double> Z(Beta, 0);
-    blockRowV(i, R_Begin, R_Begin + Mid + 1, X_Begin, X_Begin + XMid, Y_Begin,
-              Y_End);
-    blockRowV(i, R_Begin + Mid, R_End, X_Begin + XMid, X_End, Z.begin(),
-              Z.end());
-
+#pragma omp parallel sections
+    {
+#pragma omp section
+      {
+        blockRowV(i, R_Begin, R_Begin + Mid + 1, X_Begin, X_Begin + XMid,
+                  Y_Begin, Y_End);
+      }
+#pragma omp section
+      {
+        blockRowV(i, R_Begin + Mid, R_End, X_Begin + XMid, X_End, Z.begin(),
+                  Z.end());
+      }
+    }
     for (size_t k = 0; k < Beta; ++k) {
       *(Y_Begin + k) += Z.at(k);
     }
@@ -144,18 +152,27 @@ private:
         Low = Mid + 1;
       }
     }
-
-    blockV(Start, s1 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
-    blockV(s3, End, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
-    blockV(s1, s2 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
-    blockV(s2, s3 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
+#pragma omp parallel sections
+    {
+#pragma omp section
+      { blockV(Start, s1 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End); }
+#pragma omp section
+      { blockV(s3, End, Half_Dim, X_Begin, X_End, Y_Begin, Y_End); }
+    }
+#pragma omp parallel sections
+    {
+#pragma omp section
+      { blockV(s1, s2 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End); }
+#pragma omp section
+      { blockV(s2, s3 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End); }
+    }
   }
 
 public:
   CSB(const std::vector<std::vector<double>> &Original_Matrix)
       : Original_Matrix(Original_Matrix), N(Original_Matrix.size()),
-        M(Original_Matrix.at(0).size()), Beta(genBeta(N)), NumRowBlock(N / Beta),
-        NumColBlock(M / Beta) {
+        M(Original_Matrix.at(0).size()), Beta(genBeta(N)),
+        NumRowBlock(N / Beta), NumColBlock(M / Beta) {
     Blk_Ptr.emplace_back(0);
     for (size_t i = 0; i < NumRowBlock; ++i) {
       size_t Row_Begin = i * Beta;
@@ -171,6 +188,7 @@ public:
 
   void SpMV(std::vector<double> &X, std::vector<double> &Y) {
     fill(Y.begin(), Y.end(), 0);
+#pragma omp parallel for
     for (size_t i = 0; i < NumRowBlock; ++i) {
       std::vector<int> R;
       R.emplace_back(-1);

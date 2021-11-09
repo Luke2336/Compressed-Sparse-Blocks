@@ -1,6 +1,6 @@
 CXX := g++
 TARGET := csb
-OPENMPFLAG := 
+OPENMPFLAG := -fopenmp
 CXXFLAGS := -std=c++11 -O3
 WARNINGFLAGS := -Wall -Wextra
 INCLUDE := src
