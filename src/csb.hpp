@@ -1,6 +1,5 @@
 #pragma once
 
-#include <assert.h>
 #include <math.h>
 
 #include <vector>
@@ -60,37 +59,31 @@ private:
 
   size_t blockIdx(int i, int j) { return i * NumColBlock + j; }
 
-  void blockRowV(const size_t i, std::vector<size_t>::iterator R_Begin,
-                 std::vector<size_t>::iterator R_End,
+  void blockRowV(const size_t i, std::vector<int>::iterator R_Begin,
+                 std::vector<int>::iterator R_End,
                  std::vector<double>::iterator X_Begin,
                  std::vector<double>::iterator X_End,
                  std::vector<double>::iterator Y_Begin,
                  std::vector<double>::iterator Y_End) {
-    size_t R_Len = R_End - R_Begin;
-    assert(R_Len >= 2);
+    int R_Len = R_End - R_Begin;
     if (R_Len == 2) {
       size_t l = *(R_Begin) + 1;
       size_t r = *(R_Begin + 1);
-      assert(l <= r); // Bug!!
       if (l == r) {
-        size_t Start = Blk_Ptr[blockIdx(i, r)];
-        size_t End = Blk_Ptr[blockIdx(i, r) + 1] - 1;
+        size_t Start = Blk_Ptr.at(blockIdx(i, l));
+        size_t End = Blk_Ptr.at(blockIdx(i, r) + 1) - 1;
         blockV(Start, End, Beta, X_Begin, X_End, Y_Begin, Y_End);
       } else {
-        size_t Start = Blk_Ptr[blockIdx(i, l) - 1];
-        size_t End = Blk_Ptr[blockIdx(i, r) + 1] - 1;
-        printf("X.length = %d\n", X_End - X_Begin);
+        size_t Start = Blk_Ptr.at(blockIdx(i, l));
+        size_t End = Blk_Ptr.at(blockIdx(i, r) + 1) - 1;
         for (size_t k = Start; k <= End; ++k) {
-          *(Y_Begin + Row_Idx[k]) += Val[k] * *(X_Begin + Col_Idx[k]);
-          printf("Y[%zu] += %.2f * %.2f\n", Row_Idx[k], Val[k],
-                 *(X_Begin + Col_Idx[k]));
+          *(Y_Begin + Row_Idx.at(k)) += Val.at(k) * *(X_Begin + Col_Idx.at(k));
         }
       }
       return;
     }
-    size_t Mid = (R_Len & 1) ? (R_Len >> 1) : ((R_Len >> 1) - 1);
+    size_t Mid = (R_Len & (size_t)1) ? (R_Len >> 1) : ((R_Len >> 1) - 1);
     size_t XMid = Beta * (*(R_Begin + Mid) - *R_Begin);
-    printf("XMid = %zu\n", XMid);
     std::vector<double> Z(Beta, 0);
     blockRowV(i, R_Begin, R_Begin + Mid + 1, X_Begin, X_Begin + XMid, Y_Begin,
               Y_End);
@@ -98,7 +91,7 @@ private:
               Z.end());
 
     for (size_t k = 0; k < Beta; ++k) {
-      *(Y_Begin + k) += Z[k];
+      *(Y_Begin + k) += Z.at(k);
     }
   }
 
@@ -107,11 +100,12 @@ private:
               std::vector<double>::iterator X_End,
               std::vector<double>::iterator Y_Begin,
               std::vector<double>::iterator Y_End) {
+    if (Start > End) {
+      return;
+    }
     if (End - Start <= Dim) {
       for (size_t k = Start; k <= End; ++k) {
-        *(Y_Begin + Row_Idx[k]) += Val[k] * *(X_Begin + Col_Idx[k]);
-        printf("Y[%zu] += %.2f * %.2f\n", Row_Idx[k], Val[k],
-               *(X_Begin + Col_Idx[k]));
+        *(Y_Begin + Row_Idx.at(k)) += Val.at(k) * *(X_Begin + Col_Idx.at(k));
       }
       return;
     }
@@ -121,7 +115,7 @@ private:
     size_t Low = Start, High = End;
     while (Low <= High) {
       size_t Mid = (Low + High) >> 1;
-      if (Row_Idx[Mid] & Half_Dim) {
+      if (Row_Idx.at(Mid) & Half_Dim) {
         High = Mid - 1;
         s2 = Mid;
       } else {
@@ -132,7 +126,7 @@ private:
     Low = Start, High = s2 - 1;
     while (Low <= High) {
       size_t Mid = (Low + High) >> 1;
-      if (Col_Idx[Mid] & Half_Dim) {
+      if (Col_Idx.at(Mid) & Half_Dim) {
         High = Mid - 1;
         s1 = Mid;
       } else {
@@ -143,7 +137,7 @@ private:
     Low = s2, High = End;
     while (Low <= High) {
       size_t Mid = (Low + High) >> 1;
-      if (Col_Idx[Mid] & Half_Dim) {
+      if (Col_Idx.at(Mid) & Half_Dim) {
         High = Mid - 1;
         s3 = Mid;
       } else {
@@ -160,7 +154,7 @@ private:
 public:
   CSB(const std::vector<std::vector<double>> &Original_Matrix)
       : Original_Matrix(Original_Matrix), N(Original_Matrix.size()),
-        M(Original_Matrix[0].size()), Beta(genBeta(N)), NumRowBlock(N / Beta),
+        M(Original_Matrix.at(0).size()), Beta(genBeta(N)), NumRowBlock(N / Beta),
         NumColBlock(M / Beta) {
     Blk_Ptr.emplace_back(0);
     for (size_t i = 0; i < NumRowBlock; ++i) {
@@ -178,13 +172,14 @@ public:
   void SpMV(std::vector<double> &X, std::vector<double> &Y) {
     fill(Y.begin(), Y.end(), 0);
     for (size_t i = 0; i < NumRowBlock; ++i) {
-      std::vector<size_t> R;
-      R.emplace_back(0);
+      std::vector<int> R;
+      R.emplace_back(-1);
       size_t count = 0;
       for (size_t j = 0; j < NumColBlock - 1; ++j) {
         size_t Block_Idx = blockIdx(i, j);
-        count += Blk_Ptr[Block_Idx + 1] - Blk_Ptr[Block_Idx];
-        if (count + Blk_Ptr[Block_Idx + 2] - Blk_Ptr[Block_Idx + 1] > Beta) {
+        count += Blk_Ptr.at(Block_Idx + 1) - Blk_Ptr.at(Block_Idx);
+        if (count + Blk_Ptr.at(Block_Idx + 2) - Blk_Ptr.at(Block_Idx + 1) >
+            Beta) {
           R.emplace_back(j);
           count = 0;
         }

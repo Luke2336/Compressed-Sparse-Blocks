@@ -1,7 +1,7 @@
 CXX := g++
 TARGET := csb
 OPENMPFLAG := 
-CXXFLAGS := -std=c++11 -O3 -static -static-libstdc++ -static-libgcc
+CXXFLAGS := -std=c++11 -O3
 WARNINGFLAGS := -Wall -Wextra
 INCLUDE := src
 SRC_DIRS := src
