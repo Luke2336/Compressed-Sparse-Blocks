@@ -2,14 +2,16 @@
 
 ### Run (using pybind11)
 
+-   Please install pybind11 and OpenMP first!
+
 ```bash
 pip install pybind11
 
 # MacOS
-g++ -O3 -Wall -shared -std=c++11 -undefined dynamic_lookup `python3 -m pybind11 --includes` _csb.cpp -o _csb`python3-config --extension-suffix`
+g++ -O3 -Wall -shared -std=c++11 -undefined dynamic_lookup `python3 -m pybind11 --includes` _csb.cpp -o _csb`python3-config --extension-suffix` -fopenmp
 
 # Linux
-g++ -O3 -Wall -shared -std=c++11 -fPIC `python3 -m pybind11 --includes` _csb.cpp -o _csb`python3-config --extension-suffix`
+g++ -O3 -Wall -shared -std=c++11 -fPIC `python3 -m pybind11 --includes` _csb.cpp -o _csb`python3-config --extension-suffix` -fopenmp
 
 python3 test.py
 ```

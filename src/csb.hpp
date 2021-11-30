@@ -2,7 +2,7 @@
 
 #include <math.h>
 
-#include <iostream>
+#include <algorithm>
 #include <vector>
 
 class CSB {
@@ -81,7 +81,7 @@ private:
         size_t Start = Blk_Ptr.at(blockIdx(i, l));
         size_t End = Blk_Ptr.at(blockIdx(i, r) + 1) - 1;
         for (size_t k = Start; k <= End; ++k) {
-          int X_Idx = (upper_bound(Blk_Ptr.begin(), Blk_Ptr.end(), k) -
+          int X_Idx = (std::upper_bound(Blk_Ptr.begin(), Blk_Ptr.end(), k) -
                        Blk_Ptr.begin() - 1) %
                       NumColBlock;
           *(Y_Begin + Row_Idx.at(k)) +=

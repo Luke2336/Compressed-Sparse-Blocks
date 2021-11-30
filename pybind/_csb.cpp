@@ -1,8 +1,9 @@
+#include <math.h>
+#include <omp.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <math.h>
 
-#include <iostream>
+#include <algorithm>
 #include <vector>
 
 namespace py = pybind11;
@@ -83,7 +84,7 @@ private:
         size_t Start = Blk_Ptr.at(blockIdx(i, l));
         size_t End = Blk_Ptr.at(blockIdx(i, r) + 1) - 1;
         for (size_t k = Start; k <= End; ++k) {
-          int X_Idx = (upper_bound(Blk_Ptr.begin(), Blk_Ptr.end(), k) -
+          int X_Idx = (std::upper_bound(Blk_Ptr.begin(), Blk_Ptr.end(), k) -
                        Blk_Ptr.begin() - 1) %
                       NumColBlock;
           *(Y_Begin + Row_Idx.at(k)) +=
@@ -95,10 +96,19 @@ private:
     size_t Mid = (R_Len & (size_t)1) ? (R_Len >> 1) : ((R_Len >> 1) - 1);
     size_t XMid = Beta * (*(R_Begin + Mid) - *R_Begin);
     std::vector<double> Z(Y_End - Y_Begin, 0);
-    blockRowV(i, R_Begin, R_Begin + Mid + 1, X_Begin, X_Begin + XMid, Y_Begin,
-              Y_End, X);
-    blockRowV(i, R_Begin + Mid, R_End, X_Begin + XMid, X_End, Z.begin(),
-              Z.end(), X);
+#pragma omp parallel sections
+    {
+#pragma omp section
+      {
+        blockRowV(i, R_Begin, R_Begin + Mid + 1, X_Begin, X_Begin + XMid,
+                  Y_Begin, Y_End, X);
+      }
+#pragma omp section
+      {
+        blockRowV(i, R_Begin + Mid, R_End, X_Begin + XMid, X_End, Z.begin(),
+                  Z.end(), X);
+      }
+    }
     for (size_t k = 0; k < Z.size(); ++k) {
       *(Y_Begin + k) += Z.at(k);
     }
@@ -155,10 +165,20 @@ private:
         Low = Mid + 1;
       }
     }
-    blockV(Start, s1 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
-    blockV(s3, End, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
-    blockV(s1, s2 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
-    blockV(s2, s3 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
+#pragma omp parallel sections
+    {
+#pragma omp section
+      { blockV(Start, s1 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End); }
+#pragma omp section
+      { blockV(s3, End, Half_Dim, X_Begin, X_End, Y_Begin, Y_End); }
+    }
+#pragma omp parallel sections
+    {
+#pragma omp section
+      { blockV(s1, s2 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End); }
+#pragma omp section
+      { blockV(s2, s3 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End); }
+    }
   }
 
 public:
@@ -182,6 +202,7 @@ public:
 
   std::vector<double> SpMV(std::vector<double> &X) {
     std::vector<double> Y(N, 0);
+#pragma omp parallel for
     for (size_t i = 0; i < NumRowBlock; ++i) {
       std::vector<int> R;
       R.emplace_back(-1);
@@ -209,4 +230,3 @@ PYBIND11_MODULE(_csb, m) {
       .def(py::init<std::vector<std::vector<double>>>())
       .def("SpMV", &CSB::SpMV);
 }
-
