@@ -2,6 +2,7 @@
 
 #include <math.h>
 
+#include <iostream>
 #include <vector>
 
 class CSB {
@@ -64,7 +65,7 @@ private:
                  std::vector<double>::iterator X_Begin,
                  std::vector<double>::iterator X_End,
                  std::vector<double>::iterator Y_Begin,
-                 std::vector<double>::iterator Y_End) {
+                 std::vector<double>::iterator Y_End, std::vector<double> &X) {
     int R_Len = R_End - R_Begin;
     if (R_Len == 2) {
       size_t l = *(R_Begin) + 1;
@@ -74,23 +75,29 @@ private:
         size_t End = Blk_Ptr.at(blockIdx(i, r) + 1) - 1;
         blockV(Start, End, Beta, X_Begin, X_End, Y_Begin, Y_End);
       } else {
+        if (Blk_Ptr.at(blockIdx(i, l)) >= Blk_Ptr.at(blockIdx(i, r) + 1)) {
+          return;
+        }
         size_t Start = Blk_Ptr.at(blockIdx(i, l));
         size_t End = Blk_Ptr.at(blockIdx(i, r) + 1) - 1;
         for (size_t k = Start; k <= End; ++k) {
-          *(Y_Begin + Row_Idx.at(k)) += Val.at(k) * *(X_Begin + Col_Idx.at(k));
+          int X_Idx = (upper_bound(Blk_Ptr.begin(), Blk_Ptr.end(), k) -
+                       Blk_Ptr.begin() - 1) %
+                      NumColBlock;
+          *(Y_Begin + Row_Idx.at(k)) +=
+              Val.at(k) * X.at(X_Idx * Beta + Col_Idx.at(k));
         }
       }
       return;
     }
     size_t Mid = (R_Len & (size_t)1) ? (R_Len >> 1) : ((R_Len >> 1) - 1);
     size_t XMid = Beta * (*(R_Begin + Mid) - *R_Begin);
-    std::vector<double> Z(Beta, 0);
+    std::vector<double> Z(Y_End - Y_Begin, 0);
     blockRowV(i, R_Begin, R_Begin + Mid + 1, X_Begin, X_Begin + XMid, Y_Begin,
-              Y_End);
+              Y_End, X);
     blockRowV(i, R_Begin + Mid, R_End, X_Begin + XMid, X_End, Z.begin(),
-              Z.end());
-
-    for (size_t k = 0; k < Beta; ++k) {
+              Z.end(), X);
+    for (size_t k = 0; k < Z.size(); ++k) {
       *(Y_Begin + k) += Z.at(k);
     }
   }
@@ -110,8 +117,8 @@ private:
       return;
     }
     size_t Half_Dim = Dim >> 1;
-    size_t s1, s2, s3;
     // Binary search s2
+    size_t s2 = End + 1;
     size_t Low = Start, High = End;
     while (Low <= High) {
       size_t Mid = (Low + High) >> 1;
@@ -123,6 +130,7 @@ private:
       }
     }
     // Binary search s1
+    size_t s1 = s2;
     Low = Start, High = s2 - 1;
     while (Low <= High) {
       size_t Mid = (Low + High) >> 1;
@@ -134,6 +142,7 @@ private:
       }
     }
     // Binary search s3
+    size_t s3 = End + 1;
     Low = s2, High = End;
     while (Low <= High) {
       size_t Mid = (Low + High) >> 1;
@@ -144,7 +153,6 @@ private:
         Low = Mid + 1;
       }
     }
-
     blockV(Start, s1 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
     blockV(s3, End, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
     blockV(s1, s2 - 1, Half_Dim, X_Begin, X_End, Y_Begin, Y_End);
@@ -154,8 +162,9 @@ private:
 public:
   CSB(const std::vector<std::vector<double>> &Original_Matrix)
       : Original_Matrix(Original_Matrix), N(Original_Matrix.size()),
-        M(Original_Matrix.at(0).size()), Beta(genBeta(N)), NumRowBlock(N / Beta),
-        NumColBlock(M / Beta) {
+        M(Original_Matrix.at(0).size()), Beta(genBeta(N)),
+        NumRowBlock(N / Beta + (N % Beta != 0)),
+        NumColBlock(M / Beta + (M % Beta != 0)) {
     Blk_Ptr.emplace_back(0);
     for (size_t i = 0; i < NumRowBlock; ++i) {
       size_t Row_Begin = i * Beta;
@@ -186,7 +195,7 @@ public:
       }
       R.emplace_back(NumColBlock - 1);
       blockRowV(i, R.begin(), R.end(), X.begin(), X.end(), Y.begin() + i * Beta,
-                Y.begin() + (i + 1) * Beta);
+                std::min(Y.end(), Y.begin() + (i + 1) * Beta), X);
     }
   }
 };
